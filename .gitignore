@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Data (don't commit raw pulls — keep repo light)
+data/*.csv
+data/*.parquet
+!data/.gitkeep
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Env
+.env
