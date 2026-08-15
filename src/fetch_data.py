@@ -1,4 +1,5 @@
 import yfinance as yf
+from pathlib import Path
 
 """fetching data from yahoo finance and saving it to csv file while also checking for missing values in the data"""
 def fetch_data(ticker, start_date, end_date):
@@ -14,7 +15,11 @@ def fetch_data(ticker, start_date, end_date):
         return None
 
     df.columns = df.columns.get_level_values(0)
-    df.to_csv(f"data/{ticker}_{start_date}_{end_date}.csv")
+
+    data_dir = Path(__file__).resolve().parent.parent / "data"
+    data_dir.mkdir(exist_ok=True)
+    df.to_csv(data_dir / f"{ticker}_{start_date}_{end_date}.csv")
+
     return df
 
 
@@ -26,5 +31,3 @@ def fetch_multiple(tickers, start_date, end_date):
         if df is not None:
             data[ticker] = df
     return data
-
-
