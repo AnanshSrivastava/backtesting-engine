@@ -25,10 +25,10 @@ backtesting-engine/
 
 ## Pipeline
 
-1. **`fetch_data.py`** — pulls OHLCV data via `yfinance`, flattens the MultiIndex column structure, checks for missing data, and caches each pull to `data/*.csv`. Uses `Adj Close` throughout (not raw `Close`) so split/dividend adjustments don't create phantom price jumps in the signal logic.
-2. **`strategy.py`** — computes a 20-day and 50-day SMA and flags the exact day the short SMA crosses the long SMA (`signal = 1` on a golden cross, `-1` on a death cross), not just "which SMA is currently on top."
-3. **`backtest.py`** — converts the sparse `signal` spikes into a continuous `position` column (holding vs. flat), then **shifts the position forward by one day** before computing returns — the strategy only acts on a crossover the day *after* it's confirmed, since you can't know the day's close crossed until the market has actually closed. Returns compound into an equity curve via `.cumprod()`.
-4. **`metrics.py`** — computes annualised Sharpe ratio (against a Nifty 50 benchmark), CAGR, and maximum drawdown from the equity curve.
+1. **`fetch_data.py`** : pulls OHLCV data via `yfinance`, flattens the MultiIndex column structure, checks for missing data, and caches each pull to `data/*.csv`. Uses `Adj Close` throughout (not raw `Close`) so split/dividend adjustments don't create phantom price jumps in the signal logic.
+2. **`strategy.py`** : computes a 20-day and 50-day SMA and flags the exact day the short SMA crosses the long SMA (`signal = 1` on a golden cross, `-1` on a death cross), not just "which SMA is currently on top."
+3. **`backtest.py`** : converts the sparse `signal` spikes into a continuous `position` column (holding vs. flat), then **shifts the position forward by one day** before computing returns — the strategy only acts on a crossover the day *after* it's confirmed, since you can't know the day's close crossed until the market has actually closed. Returns compound into an equity curve via `.cumprod()`.
+4. **`metrics.py`** : computes annualised Sharpe ratio (against a Nifty 50 benchmark), CAGR, and maximum drawdown from the equity curve.
 
 ## Key Design Decisions
 
@@ -36,7 +36,7 @@ backtesting-engine/
 - **Adjusted close, not raw close.** Raw `Close` shows fake price cliffs around stock splits/dividends, which would generate false signals. `Adj Close` is used for all signal and return calculations.
 - **Benchmark-relative Sharpe.** Rather than just measuring absolute risk-adjusted return, Sharpe is computed against Nifty 50 (`^NSEI`) daily returns, so the ratio reflects genuine outperformance/underperformance versus the market, not just an arbitrary risk-free assumption.
 
-## Findings — RELIANCE.NS, 20/50 SMA Crossover
+## Findings : RELIANCE.NS, 20/50 SMA Crossover
 
 The strategy was tested across several windows on RELIANCE.NS. Results are highly **regime-dependent**:
 
