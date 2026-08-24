@@ -6,7 +6,6 @@ def run_backtest(df, initial_capital=100000):
     """
     Convert crossover signals into a continuous position, apply lookahead-safe
     shifting, and compute strategy returns and equity curve.
-    
     Expects df to already have a 'signal' column from generate_signals().
     """
     # signal has: 1 (buy crossover), -1 (sell crossover), 0 (nothing happening)
@@ -25,7 +24,7 @@ def run_backtest(df, initial_capital=100000):
 
     # Only earn the daily_return on days where position == 1
     df['strategy_return'] = df['position'] * df['daily_return']
-
+    df['strategy_return'] = df['strategy_return'].fillna(0)  # fill NaN values with 0 for days without a position
     # Starting from initial_capital, compound the strategy returns day by day
     df['equity_curve'] = initial_capital * (1 + df['strategy_return']).cumprod()
 
