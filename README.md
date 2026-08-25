@@ -47,6 +47,8 @@ The strategy was tested across several windows on RELIANCE.NS. Results are highl
 | 2018–2022 (a) | 73.79% | 66.19% | +0.06 | Outperformed, but Sharpe barely positive |
 | 2018–2022 (b) | 40.88% | 16.53% | +0.65 | Clear outperformance, strongest Sharpe |
 
+![Equity Curve](docs/equity_curve.png)
+
 **Max drawdown (2020–2024 window): -41.78%** vs. **-21.68%** for buy-and-hold RELIANCE.NS.
 
 This looked counterintuitive at first, the strategy sat out the COVID crash entirely (`position = 0` through Feb–March 2020), so it wasn't obvious where a *worse-than-buy-and-hold* drawdown came from. Tracing it: the strategy caught the post-COVID recovery strongly, growing simulated capital from ₹100,000 to a peak of **₹160,718 by September 2020** (+60.7%) but then gave back a large share of that gain over the following two years as RELIANCE.NS entered a period of sideways consolidation. Each small SMA crossover during that chop triggered a buy/sell pair that lost a little money (a **whipsaw**), and those small losses compounded into the 41.78% peak-to-trough decline by December 2022.
