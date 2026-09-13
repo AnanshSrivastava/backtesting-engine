@@ -13,7 +13,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
 from src.fetch_data import fetch_data
 from src.strategy import generate_signals
 from src.backtest import run_backtest
-from src.metrics import sharpe_ratio, cagr, max_drawdown
+from src.metrics import information_ratio, sharpe_ratio, cagr, max_drawdown
 
 TICKER = "RELIANCE.NS"
 BENCHMARK_TICKER = "^NSEI"
@@ -32,10 +32,10 @@ else:
     backtest_results = run_backtest(df_signals)
 
     strategy_cagr = cagr(backtest_results['equity_curve'])
-    sharpe = sharpe_ratio(backtest_results['strategy_return'], benchmark_df['daily_return'])
     strategy_max_dd = max_drawdown(backtest_results['equity_curve'])
     buy_hold_max_dd = max_drawdown(backtest_results['Adj Close'])
-
+    sharpe = sharpe_ratio(backtest_results['strategy_return'])
+    info_ratio = information_ratio(backtest_results['strategy_return'], benchmark_df['daily_return'])
     buy_hold_return = (backtest_results['Adj Close'].iloc[-1] / backtest_results['Adj Close'].iloc[0]) - 1
     strategy_total_return = (backtest_results['equity_curve'].iloc[-1] / backtest_results['equity_curve'].iloc[0]) - 1
     nifty_return = (benchmark_df['Adj Close'].iloc[-1] / benchmark_df['Adj Close'].iloc[0]) - 1
@@ -48,3 +48,4 @@ else:
     print(f"Strategy Total Return:     {strategy_total_return:.2%}")
     print(f"Buy & Hold Total Return:   {buy_hold_return:.2%}")
     print(f"Nifty 50 Total Return:     {nifty_return:.2%}")
+    print(f"Information Ratio:         {info_ratio:.4f}")  # Placeholder for information ratio

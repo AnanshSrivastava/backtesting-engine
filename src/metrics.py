@@ -3,31 +3,46 @@ import pandas as pd
 #Sharpe ratio is a measure of risk-adjusted return, which helps investors understand how much excess return they are receiving 
 # for the extra volatility endured by holding a riskier asset. It is calculated as the difference between the returns of the investment
 # and the risk-free return, divided by the standard deviation of the investment returns.
-def sharpe_ratio(strategy_returns, benchmark_returns=None, risk_free_rate=0.06, N=252):
+def sharpe_ratio(strategy_returns, risk_free_rate=0.06, N=252):
     """
-    Calculate the Sharpe ratio of a strategy compared to a benchmark.
+    Calculate the annualised Sharpe ratio: risk-adjusted return relative
+    to a risk-free rate.
 
     Parameters:
         strategy_returns (pd.Series): Daily returns of the strategy.
-        benchmark_returns (pd.Series): Daily returns of the benchmark.
         risk_free_rate (float): Annual risk-free rate (default is 6%).
+        N (int): Trading periods per year (default 252).
 
     Returns:
         float: The Sharpe ratio of the strategy.
     """
-    if benchmark_returns is not None:
-        #align both series on matching dates
-        aligned = pd.concat([strategy_returns, benchmark_returns], axis=1,join='inner')
-        aligned.columns = ['strategy', 'benchmark']
-        excess_returns = aligned['strategy'] - aligned['benchmark']
-
-    else:
-        daily_risk_free_rate = risk_free_rate / N 
-        excess_returns = strategy_returns - daily_risk_free_rate
-
+    daily_risk_free_rate = risk_free_rate / N
+    excess_returns = strategy_returns - daily_risk_free_rate
     excess_returns = excess_returns.dropna()  # Drop NaN values to avoid issues in calculations
 
     return np.sqrt(N) * excess_returns.mean() / excess_returns.std()
+
+
+def information_ratio(strategy_returns, benchmark_returns, N=252):
+    """
+    Calculate the annualised Information Ratio: consistency of a strategy's
+    outperformance relative to a benchmark.
+
+    Parameters:
+        strategy_returns (pd.Series): Daily returns of the strategy.
+        benchmark_returns (pd.Series): Daily returns of the benchmark.
+        N (int): Trading periods per year (default 252).
+
+    Returns:
+        float: The Information Ratio of the strategy vs. the benchmark.
+    """
+    # align both series on matching dates
+    aligned = pd.concat([strategy_returns, benchmark_returns], axis=1, join='inner')
+    aligned.columns = ['strategy', 'benchmark']
+    active_returns = aligned['strategy'] - aligned['benchmark']
+    active_returns = active_returns.dropna()  # Drop NaN values to avoid issues in calculations
+
+    return np.sqrt(N) * active_returns.mean() / active_returns.std()
 
 #cagr is a measure of the mean annual growth rate of an investment over a specified period of time longer than one year.
 def cagr(equity_curve):
