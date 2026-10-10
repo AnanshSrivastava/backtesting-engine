@@ -38,7 +38,9 @@ else:
     info_ratio = information_ratio(backtest_results['strategy_return'], benchmark_df['daily_return'])
     buy_hold_return = (backtest_results['Adj Close'].iloc[-1] / backtest_results['Adj Close'].iloc[0]) - 1
     strategy_total_return = (backtest_results['equity_curve'].iloc[-1] / backtest_results['equity_curve'].iloc[0]) - 1
-    nifty_return = (benchmark_df['Adj Close'].iloc[-1] / benchmark_df['Adj Close'].iloc[0]) - 1
+    # Measure Nifty from the same start day as the backtest, so the comparison is fair
+    bench = benchmark_df.loc[backtest_results.index[0]:]
+    nifty_return = (bench['Adj Close'].iloc[-1] / bench['Adj Close'].iloc[0]) - 1
 
     print(f"--- {TICKER} | {START_DATE} to {END_DATE} ---")
     print(f"Strategy CAGR:            {strategy_cagr:.2%}")

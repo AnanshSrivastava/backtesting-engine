@@ -1,9 +1,25 @@
+"""Fetch OHLCV data from Yahoo Finance, with a local CSV cache."""
+import os
+import pandas as pd
 import yfinance as yf
-from pathlib import Path
 
-"""fetching data from yahoo finance and saving it to csv file while also checking for missing values in the data"""
-def fetch_data(ticker, start_date, end_date):
-    '''checks for error during data fetching'''
+# Absolute path to <repo>/data, independent of where the script is run from
+DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data")
+
+
+def fetch_data(ticker, start_date, end_date, use_cache=True, data_dir=DATA_DIR):
+    """
+    Return a clean OHLCV DataFrame for one ticker, or None on failure.
+
+    If a cached CSV for this exact (ticker, start, end) exists and use_cache
+    is True, it is loaded instead of hitting the network. Pass use_cache=False
+    to force a fresh download (which also overwrites the cache file).
+    """
+    cache_path = os.path.join(data_dir, f"{ticker}_{start_date}_{end_date}.csv")
+
+    if use_cache and os.path.exists(cache_path):
+        return pd.read_csv(cache_path, index_col=0, parse_dates=True)
+
     try:
         df = yf.download(ticker, start=start_date, end=end_date, auto_adjust=False)
     except Exception as e:
@@ -16,18 +32,16 @@ def fetch_data(ticker, start_date, end_date):
 
     df.columns = df.columns.get_level_values(0)
 
-    data_dir = Path(__file__).resolve().parent.parent / "data"
-    data_dir.mkdir(exist_ok=True)
-    df.to_csv(data_dir / f"{ticker}_{start_date}_{end_date}.csv")
-
+    os.makedirs(data_dir, exist_ok=True)
+    df.to_csv(cache_path)
     return df
 
 
-"""fetching data for multiple tickers using fetch_data function"""
-def fetch_multiple(tickers, start_date, end_date):
+def fetch_multiple(tickers, start_date, end_date, use_cache=True):
+    """Fetch several tickers. Returns {ticker: DataFrame}, skipping failures."""
     data = {}
     for ticker in tickers:
-        df = fetch_data(ticker, start_date, end_date)
+        df = fetch_data(ticker, start_date, end_date, use_cache=use_cache)
         if df is not None:
             data[ticker] = df
     return data
