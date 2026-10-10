@@ -4,8 +4,12 @@ import numpy as np
 
 def run_backtest(df, initial_capital=100000):
     """
-    Convert crossover signals into a continuous position, apply lookahead-safe
-    shifting, and compute strategy returns and equity curve.
+    Convert close-based crossover signals into positions and compute returns.
+
+    A signal is only known after that session's close. This backtest assumes
+    execution at the following session's close, so the position is shifted by
+    two rows before it is applied to close-to-close returns: the signal row is
+    not traded, and the return ending on the assumed fill row is not earned.
     Expects df to already have a 'signal' column from generate_signals().
     """
     # signal has: 1 (buy crossover), -1 (sell crossover), 0 (nothing happening)
@@ -16,8 +20,9 @@ def run_backtest(df, initial_capital=100000):
     df['position'] = df['position'].ffill()             # carry forward last known state
     df['position'] = df['position'].fillna(0)         # handle rows before first crossover
 
-    # We can only ACT on it starting day N+1.
-    df['position'] = df['position'].shift(1)  # shift down by 1 to avoid lookahead bias
+    # Signal is confirmed at close t; assume fill at close t+1; earn returns
+    # beginning with the close-to-close interval after that fill (row t+2).
+    df['position'] = df['position'].shift(2).fillna(0)
 
     # gives day-over-day percentage change in adjusted close price
     df['daily_return'] = df['Adj Close'].pct_change()

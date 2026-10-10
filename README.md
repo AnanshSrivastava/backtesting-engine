@@ -14,31 +14,35 @@ backtesting-engine/
 ├── docs/                   # diagrams / images used in this README
 ├── notebooks/
 │   └── test.py             # orchestrates the full pipeline end-to-end
+├── tests/
+│   └── test_backtest_timing.py # checks signal-to-return timing
 ├── src/
 │   ├── fetch_data.py       # yfinance data fetching + cleaning
 │   ├── strategy.py         # SMA crossover signal generation
 │   ├── backtest.py         # signal → position → equity curve
-│   └── metrics.py          # Sharpe, CAGR, max drawdown
+│   └── metrics.py          # Sharpe, Information Ratio, CAGR, max drawdown
 ├── requirements.txt
 └── README.md
 ```
 
 ## Pipeline
 
-1. **`fetch_data.py`** : pulls OHLCV data via `yfinance`, flattens the MultiIndex column structure, checks for missing data, and caches each pull to `data/*.csv`. Uses `Adj Close` throughout (not raw `Close`) so split/dividend adjustments don't create phantom price jumps in the signal logic.
+1. **`fetch_data.py`** : pulls OHLCV data via `yfinance`, flattens the MultiIndex column structure, and saves each pull to `data/*.csv`. It currently downloads again on each run; reading from the saved files as a cache is not implemented yet. Uses `Adj Close` for signals and returns.
 2. **`strategy.py`** : computes a 20-day and 50-day SMA and flags the exact day the short SMA crosses the long SMA (`signal = 1` on a golden cross, `-1` on a death cross), not just "which SMA is currently on top."
-3. **`backtest.py`** : converts the sparse `signal` spikes into a continuous `position` column (holding vs. flat), then **shifts the position forward by one day** before computing returns the strategy only acts on a crossover the day *after* it's confirmed, since you can't know the day's close crossed until the market has actually closed. Returns compound into an equity curve via `.cumprod()`.
-4. **`metrics.py`** : computes annualised Sharpe ratio (against a Nifty 50 benchmark), CAGR, and maximum drawdown from the equity curve.
+3. **`backtest.py`** : converts sparse crossover signals into a continuous long-or-flat position. A signal is known only after that day's close. The current simulation assumes the order fills at the following session's close; it starts earning close-to-close returns after that assumed fill. Returns compound into an equity curve via `.cumprod()`.
+4. **`metrics.py`** : computes annualised Sharpe ratio using a fixed risk-free rate, Information Ratio against benchmark returns, CAGR, and maximum drawdown.
 
 ## Key Design Decisions
 
-- **Lookahead bias.** The most common backtesting bug: using information that wouldn't have been available at decision time. Signals are shifted one bar forward before being used to compute any position or return.
+- **Signal timing.** Crossover signals use closing prices and are known only after the close. The simulator assumes execution at the next session's close and delays credited returns until after that fill. `tests/test_backtest_timing.py` uses large synthetic price jumps around buy/sell signals to check that the strategy does not earn a return before its assumed fill. This is a simplified daily-bar execution convention; it does not model intraday fills.
 - **Adjusted close, not raw close.** Raw `Close` shows fake price cliffs around stock splits/dividends, which would generate false signals. `Adj Close` is used for all signal and return calculations.
-- **Benchmark-relative Sharpe.** Rather than just measuring absolute risk-adjusted return, Sharpe is computed against Nifty 50 (`^NSEI`) daily returns, so the ratio reflects genuine outperformance/underperformance versus the market, not just an arbitrary risk-free assumption.
+- **Distinct risk metrics.** Sharpe compares strategy returns with a risk-free rate. Information Ratio compares strategy returns with Nifty 50 (`^NSEI`) returns. They answer different questions and are reported separately.
 
-## Findings : RELIANCE.NS, 20/50 SMA Crossover
+## Previous Results (Preliminary; Re-run Required)
 
-The strategy was tested across several windows on RELIANCE.NS. Results are highly **regime-dependent**:
+The values below are retained from a previous run of the backtester, before the execution-timing correction described above. They do not include transaction costs or slippage and should not be treated as validated results for the current code. The source and settings for the two rows labeled `(a)` and `(b)` were not recorded, so those figures are not reproducible from the README alone. Re-run all windows with the current timing convention and record the exact metric definitions and assumptions before drawing conclusions.
+
+The prior run reported these figures for RELIANCE.NS:
 
 | Window | Strategy Return | Nifty 50 Return | Sharpe | Notes |
 |---|---|---|---|---|
@@ -51,9 +55,9 @@ The strategy was tested across several windows on RELIANCE.NS. Results are highl
 
 **Max drawdown (2020–2024 window): -41.78%** vs. **-21.68%** for buy-and-hold RELIANCE.NS.
 
-This looked counterintuitive at first, the strategy sat out the COVID crash entirely (`position = 0` through Feb–March 2020), so it wasn't obvious where a *worse-than-buy-and-hold* drawdown came from. Tracing it: the strategy caught the post-COVID recovery strongly, growing simulated capital from ₹100,000 to a peak of **₹160,718 by September 2020** (+60.7%) but then gave back a large share of that gain over the following two years as RELIANCE.NS entered a period of sideways consolidation. Each small SMA crossover during that chop triggered a buy/sell pair that lost a little money (a **whipsaw**), and those small losses compounded into the 41.78% peak-to-trough decline by December 2022.
+The previous analysis attributed the reported drawdown to repeated whipsaws during sideways consolidation. That explanation, like the figures above, needs to be rechecked after rerunning the backtest with corrected timing and transaction costs.
 
-**Takeaway:** this is a textbook trend-following failure mode, not a bug — the same lag that lets the strategy avoid catching a falling knife also means it enters trends late and gets whipsawed repeatedly once a trend flattens out. The strategy performs well when there's a strong, sustained directional move, and poorly during extended sideways markets.
+**Working hypothesis:** trend-following strategies can enter trends late and lose through repeated whipsaws in sideways markets. Whether that explains this strategy's current results remains to be verified.
 
 ## Setup
 
@@ -74,11 +78,19 @@ pip install -r requirements.txt
 python notebooks/test.py
 ```
 
-This fetches data for the configured ticker and benchmark, runs the crossover strategy, simulates the backtest, and prints CAGR, Sharpe ratio, and max drawdown against buy-and-hold.
+This fetches data for the configured ticker and benchmark, runs the crossover strategy, simulates the backtest, and prints CAGR, Sharpe Ratio, Information Ratio, drawdown, and total returns. Data is currently downloaded on each run.
+
+## Tests
+
+The timing tests use synthetic prices so no network data is needed. Install `pytest` in the environment, then run:
+
+```bash
+python -m pytest
+```
 
 ## Limitations & Next Steps
 
-- No transaction costs or slippage modelled yet, real-world Sharpe would likely be lower once costs are included.
+- Transaction costs and slippage are not modeled yet; current results are pre-cost.
 - Single-asset, long-only. No portfolio-level allocation across multiple tickers.
 - Considering a second-indicator confirmation filter (e.g. RSI) to reduce whipsaw frequency in choppy regimes — not yet implemented, and not guaranteed to help, since whipsaw risk is a fairly fundamental property of trend-following in sideways markets.
 - Risk-free rate is currently a fixed approximation rather than actual historical G-Sec yields.
