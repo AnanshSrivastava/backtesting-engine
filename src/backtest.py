@@ -1,36 +1,43 @@
-# src/backtest.py
-import pandas as pd
 import numpy as np
+import pandas as pd
 
-def run_backtest(df, initial_capital=100000):
+
+def run_backtest(df, initial_capital=100000, execution_lag=2, cost_per_side=0.0):
     """
-    Convert close-based crossover signals into positions and compute returns.
+    Turn crossover signals into positions, returns and an equity curve.
 
-    A signal is only known after that session's close. This backtest assumes
-    execution at the following session's close, so the position is shifted by
-    two rows before it is applied to close-to-close returns: the signal row is
-    not traded, and the return ending on the assumed fill row is not earned.
-    Expects df to already have a 'signal' column from generate_signals().
+    Expects df to have 'signal' (from generate_signals) and 'Adj Close'.
+
+    Execution timing: a signal is confirmed at the close of day T. With
+    execution_lag=2 the trade happens at the close of day T+1 and the first
+    return earned is T+1 to T+2. With execution_lag=1 the trade happens at
+    the signal-day close itself (less conservative). Lags below 1 would
+    trade on information not yet available, so they are rejected.
+
+    Costs: cost_per_side is a fraction of traded value (0.001 = 10 bps),
+    charged on every change of position. A full round trip pays it twice.
+    The cost is deducted on the first day the new position earns a return.
+
+    Adds: position, daily_return, turnover, cost, strategy_return,
+    equity_curve.
     """
-    # signal has: 1 (buy crossover), -1 (sell crossover), 0 (nothing happening)
-    # position should be: 1 while holding, 0 while flat, carried forward between crossovers
+    if execution_lag < 1:
+        raise ValueError("execution_lag must be at least 1 (lag 0 would use same-bar information)")
+    if cost_per_side < 0:
+        raise ValueError("cost_per_side must be non-negative")
 
-    df['position'] = df['signal'].replace(0, np.nan)      # turn "nothing happening" into gaps
-    df['position'] = df['position'].replace(-1, 0)    # sell = flat
-    df['position'] = df['position'].ffill()             # carry forward last known state
-    df['position'] = df['position'].fillna(0)         # handle rows before first crossover
+    # 1 while holding, 0 while flat, carried forward between crossovers
+    held = df['signal'].replace(0, np.nan)
+    held = held.replace(-1, 0)
+    held = held.ffill().fillna(0)
 
-    # Signal is confirmed at close t; assume fill at close t+1; earn returns
-    # beginning with the close-to-close interval after that fill (row t+2).
-    df['position'] = df['position'].shift(2).fillna(0)
-
-    # gives day-over-day percentage change in adjusted close price
+    df['position'] = held.shift(execution_lag).fillna(0)
     df['daily_return'] = df['Adj Close'].pct_change()
 
-    # Only earn the daily_return on days where position == 1
-    df['strategy_return'] = df['position'] * df['daily_return']
-    df['strategy_return'] = df['strategy_return'].fillna(0)  # fill NaN values with 0 for days without a position
-    # Starting from initial_capital, compound the strategy returns day by day
-    df['equity_curve'] = initial_capital * (1 + df['strategy_return']).cumprod()
+    df['turnover'] = df['position'].diff().abs().fillna(0)
+    df['cost'] = df['turnover'] * cost_per_side
 
+    gross = df['position'] * df['daily_return']
+    df['strategy_return'] = (gross - df['cost']).fillna(0)
+    df['equity_curve'] = initial_capital * (1 + df['strategy_return']).cumprod()
     return df

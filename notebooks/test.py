@@ -29,7 +29,7 @@ if df is None:
 else:
     df_signals = generate_signals(df.copy(), verbose=False)
     df_signals = df_signals.dropna(subset=['SMA_long'])
-    backtest_results = run_backtest(df_signals)
+    backtest_results = run_backtest(df_signals,execution_lag=1)
 
     strategy_cagr = cagr(backtest_results['equity_curve'])
     strategy_max_dd = max_drawdown(backtest_results['equity_curve'])
