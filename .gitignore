@@ -13,4 +13,4 @@ data/*.parquet
 .ipynb_checkpoints/
 
 # Env
-.env
+.envdata/
