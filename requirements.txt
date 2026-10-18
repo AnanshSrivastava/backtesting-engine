@@ -4,3 +4,4 @@ numpy == 2.5.2
 matplotlib
 pytest
 statsmodels
+scikit-learn==1.9.1

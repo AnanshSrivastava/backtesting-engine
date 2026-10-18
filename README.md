@@ -17,13 +17,16 @@ backtesting-engine/
 ├── docs/                         # diagrams and charts used in this README
 ├── notebooks/
 │   ├── test.py                   # full pipeline: both execution lags, stats, run registry
-│   └── plot_equity.py            # equity curve + drawdown chart -> docs/equity_curve.png
+│   ├── plot_equity.py            # equity curve + drawdown chart -> docs/equity_curve.png
+│   └── run_ml_strategy.py        # walk-forward logistic regression vs SMA and buy-and-hold
 ├── src/
 │   ├── fetch_data.py             # yfinance download, cleaning, CSV cache
 │   ├── strategy.py               # SMA crossover signal generation
 │   ├── backtest.py               # signal -> position -> costs -> equity curve
 │   ├── metrics.py                # Sharpe, Information Ratio, CAGR, max drawdown
-│   └── analysis.py               # ADF, autocorrelation, bootstrap Sharpe CI, run registry
+│   ├── analysis.py               # ADF, autocorrelation, bootstrap Sharpe CI, run registry
+│   ├── evaluation.py             # evaluation-window logic shared by the scripts
+│   └── ml_strategy.py            # features, walk-forward logistic regression, signals
 ├── tests/                        # pytest suite
 ├── pytest.ini
 ├── requirements.txt
@@ -37,6 +40,7 @@ backtesting-engine/
 3. **`backtest.py`** turns the sparse crossover signals into a continuous holding/flat position, delays it by `execution_lag` sessions, applies the daily returns, deducts transaction costs on every position change, and compounds the result into an equity curve.
 4. **`metrics.py`** computes annualised Sharpe ratio (against a risk-free rate), Information Ratio (against Nifty 50), CAGR, and maximum drawdown.
 5. **`analysis.py`** runs statistical checks on the strategy returns (see below) and appends every run to a registry, so the number of variants tested is on record.
+6. **`ml_strategy.py`** builds features, trains a logistic regression walk-forward, and converts its predictions into the same signals the backtester already understands, so the ML strategy runs through exactly the same execution, cost and evaluation code as the SMA.
 
 ## Execution Timing and Costs
 
@@ -59,7 +63,7 @@ The 50-day SMA needs about two months of history before it is valid. The pipelin
 python -m pytest -q
 ```
 
-The suite covers the execution-delay logic on a hand-built frame, known-answer checks for drawdown and CAGR, Sharpe and Information Ratio behaviour (including date alignment), the data cache (using a fake downloader, so no network is needed), and the statistical checks: Sharpe against its formula, a deterministic and well-behaved bootstrap, ADF and autocorrelation on synthetic series with known answers, and the run registry. GitHub Actions runs the same tests on every push.
+The suite covers the execution-delay logic on a hand-built frame, known-answer checks for drawdown and CAGR, Sharpe and Information Ratio behaviour (including date alignment), the data cache (using a fake downloader, so no network is needed), the statistical checks (Sharpe against its formula, a deterministic and well-behaved bootstrap, ADF and autocorrelation on synthetic series with known answers, the run registry), and the walk-forward strategy (label alignment with the execution lag, features and predictions that provably ignore future prices, no predictions before the evaluation window). GitHub Actions runs the same tests on every push.
 
 ## Results: RELIANCE.NS, SMA 20/50, 2020-01-01 to 2023-12-29
 
@@ -71,7 +75,7 @@ Single stock, single window, one parameter set. Costs of 10 bps per side are inc
 | CAGR | -1.00% | 2.52% | 17.44% | 15.60% |
 | Max drawdown | -50.66% | -43.04% | -44.08% | -38.44% |
 | Sharpe (risk-free 6%) | -0.2737 | -0.0945 | 0.4863 | 0.5350 |
-| Sharpe 95% CI (block bootstrap) | [-1.33, 0.75] | [-1.19, 0.94] | not computed | not computed |
+| Sharpe 95% CI (block bootstrap) | [-1.33, 0.75] | [-1.19, 0.94] | [-0.51, 1.49] | [-0.51, 1.69] |
 | Information Ratio vs Nifty 50 | -0.7090 | -0.5672 | 0.1958 | n/a |
 | Position changes / time invested | 27 / 51.4% | 27 / 51.5% | n/a | n/a |
 
@@ -97,7 +101,7 @@ What the numbers say:
 - Strategy, buy-and-hold and Nifty 50 are all measured from the same first day, 2020-01-01, so the February to March 2020 crash is included in every column. The last day, 2023-12-29, is the final trading day before the end date.
 - The risk-free rate is a fixed 6% approximation, not historical government bond yields. Flat days earn 0 in the backtest but have the risk-free rate subtracted in the Sharpe calculation, which slightly penalises the strategy.
 - Results for other windows (2022 to 2024 and two 2018 windows) came from earlier versions of the code and have been withdrawn until re-run.
-- Every run is logged to `data/run_registry.jsonl` with its parameters, data fingerprint and statistics. Variants tested so far: 1 (SMA 20/50) at 2 execution lags.
+- Every run is logged to `data/run_registry.jsonl` with its parameters, data fingerprint and statistics. Variants tested so far: 2 (SMA 20/50 and the logistic regression below), each at 2 execution lags, 4 runs in total. Re-running a script appends another registry row, so variants are counted as distinct configurations, not rows.
 
 ### Corrections log
 
@@ -107,6 +111,33 @@ What the numbers say:
 - An early run had a leading NaN that propagated through the compounded equity curve. It is fixed and covered by a test.
 - **An earlier version evaluated everything from 2020-03-12, the first day after the 50-day SMA warm-up.** That start sits just after the COVID crash, so it inflated buy-and-hold (169.80% and 126.60% for the stock and Nifty, against 89.98% and 78.38% over the full window) and left the crash out of buy-and-hold's drawdown (-21.68%, against -44.08%). The pipeline now fetches warm-up data before the start date so all figures cover the full stated window. An intermediate correction had changed the Nifty figure from 78.38% to 126.60%; that fixed a start-date mismatch but not this window problem.
 - An earlier version modelled no transaction costs, so the earlier gross figures (13.45% and -1.30% total return) are superseded.
+
+## Results: walk-forward logistic regression
+
+**Model.** A logistic regression (L2, C = 0.1) predicts whether the return earned under the chosen execution lag is positive, from five lagged returns, 20-day volatility, RSI(14), and price relative to its 20- and 50-day SMA. It is refit every 21 trading days on the previous 504 rows only; rows whose label is not yet realised at the refit date are excluded. The strategy is long when P(up) > 0.5 and flat otherwise. The configuration was fixed before looking at any result and has not been tuned. Same window, costs and execution lags as the SMA above. The model uses 2016 onward for training so it has data before the evaluation window starts.
+
+| Strategy | Total return | CAGR | Max drawdown | Sharpe | Sharpe 95% CI | Info ratio vs Nifty | Position changes | Invested |
+|---|---|---|---|---|---|---|---|---|
+| Buy and hold RELIANCE.NS | 89.98% | 17.44% | -44.08% | 0.4863 | [-0.51, 1.49] | 0.1958 | n/a | n/a |
+| Buy and hold Nifty 50 | 78.38% | 15.60% | -38.44% | 0.5350 | [-0.51, 1.69] | n/a | n/a | n/a |
+| SMA 20/50, lag 2 | -3.94% | -1.00% | -50.66% | -0.2737 | [-1.33, 0.75] | -0.7090 | 27 | 51.4% |
+| Logistic regression, lag 2 | -5.25% | -1.34% | -28.24% | -0.2005 | [-1.14, 0.73] | -0.7271 | 224 | 65.8% |
+| SMA 20/50, lag 1 | 10.43% | 2.52% | -43.04% | -0.0945 | [-1.19, 0.94] | -0.5672 | 27 | 51.5% |
+| Logistic regression, lag 1 | -20.84% | -5.69% | -39.40% | -0.4087 | [-1.40, 0.63] | -0.9443 | 221 | 65.7% |
+
+Prediction quality on the evaluation window (out of sample, walk-forward):
+
+| Lag | Directional accuracy | Majority-class rate | AUC | Sharpe before costs | Sharpe after costs |
+|---|---|---|---|---|---|
+| 2 | 48.48% | 52.22% | 0.4719 | 0.0444 | -0.2005 |
+| 1 | 48.94% | 52.27% | 0.4745 | -0.1625 | -0.4087 |
+
+- **The model shows no predictive skill.** Its accuracy is below the rate of always guessing the majority class, and an AUC near 0.47 (0.5 means no skill) is consistent with noise at about 990 predictions. An AUC slightly under 0.5 is not read as an inverse signal.
+- **Before costs the result is roughly zero, and costs decide the rest.** The model changes position 224 times in four years, so 10 bps per side takes the lag 2 Sharpe from 0.04 to -0.20.
+- **It does not beat the SMA or buy-and-hold.** All the Sharpe intervals include zero and overlap heavily, so the data cannot rank the two strategies, and cannot separate either from zero. The point estimates favour buy-and-hold, but with four years of data even buy-and-hold's interval includes zero.
+- **Lag 1 is the optimistic assumption, yet the model does worse at lag 1 than at lag 2.** With no skill, the two lags differ only by noise, because each lag trains on a different one-day-shifted target. This is the same lesson as the SMA's sensitivity to fill timing.
+- The lower maximum drawdown (-28.24% at lag 2) is about what 66% market exposure produces on its own. It is not evidence of skill.
+- No hyperparameters were searched. Variants tested overall: 2 strategies, 2 lags each.
 
 ## Setup
 
@@ -126,6 +157,7 @@ pip install -r requirements.txt
 ```bash
 python notebooks/test.py              # runs both execution lags and prints the results and statistical checks
 python notebooks/plot_equity.py # saves docs/equity_curve.png and prints a results table
+python notebooks/run_ml_strategy.py   # walk-forward logistic regression vs SMA and buy-and-hold
 ```
 
 `test.py` fetches the stock and benchmark (with warm-up), runs the crossover strategy at lag 2 and lag 1, and prints CAGR, Sharpe with a bootstrap confidence interval, Information Ratio, max drawdown, and the autocorrelation and ADF checks against buy-and-hold and Nifty 50. Each run is appended to the run registry.
@@ -134,8 +166,8 @@ python notebooks/plot_equity.py # saves docs/equity_curve.png and prints a resul
 
 - Slippage and market impact are not modelled, and the 10 bps cost is a flat approximation rather than the actual Indian brokerage, STT and stamp duty schedule.
 - Single asset, long-only, one fixed parameter set (20/50), one four-year window. Statistical power is low, so no conclusion about the strategy in general should be drawn.
-- Planned: a walk-forward logistic-regression strategy compared against SMA and buy-and-hold after costs, with every variant tested counted and reported.
+- The logistic-regression strategy has no demonstrated skill on this stock and window. Changing it (for example a probability band to cut turnover) would be a new, counted variant. Adding more assets and a longer history would add more statistical power than tuning on this one stock.
 
 ## Tech
 
-Python, pandas, NumPy, statsmodels, yfinance, matplotlib, pytest, GitHub Actions
+Python, pandas, NumPy, statsmodels, scikit-learn, yfinance, matplotlib, pytest, GitHub Actions
